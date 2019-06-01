@@ -49,19 +49,23 @@ section '.text' code readable executable
         invoke  GetModuleHandle, 0
         mov     [instance], eax
 
+        invoke  memset, ofn, 0, sizeof.OPENFILENAMEA
+
+        invoke  malloc, 520
+        mov     dword [process], eax
+        add     eax, 260
+        mov     dword [filename], eax
+
         mov     dword [ofn.lStructSize], sizeof.OPENFILENAMEA
         mov     dword [ofn.hwndOwner], HWND_DESKTOP
-        mov     dword [ofn.lpstrFile], filename
+        mov     dword [ofn.lpstrFile], eax
         mov     dword [ofn.nMaxFile], 260
         mov     dword [ofn.lpstrFilter], filter
         mov     dword [ofn.nFilterIndex], 1
-        mov     dword [ofn.lpstrFileTitle], 0
-        mov     dword [ofn.nMaxFileTitle], 0
-        mov     dword [ofn.lpstrInitialDir], 0
         mov     dword [ofn.Flags], OFN_PATHMUSTEXIST + OFN_FILEMUSTEXIST
         mov     dword [entry32.dwSize], sizeof.PROCESSENTRY32
 
-        invoke  DialogBoxParam, eax, 0, HWND_DESKTOP, DialogProc, 0
+        invoke  DialogBoxParam, [instance], 0, HWND_DESKTOP, DialogProc, 0
         invoke  ExitProcess, 0
 
   proc DialogProc hwndDlg, uMsg, wParam, lParam
@@ -74,7 +78,7 @@ section '.text' code readable executable
         cmp     [uMsg], WM_CLOSE
         je      .close
 
-        xor     eax,eax
+        xor     eax, eax
         jmp     .finish
 
   .initdialog:
@@ -97,9 +101,10 @@ section '.text' code readable executable
         invoke  SendMessage, [combobox], CB_GETCURSEL, 0, 0
         mov     dword [cursel], eax
 
-        invoke  SendMessage, [combobox], CB_GETLBTEXT, [cursel], process
-        cmp [process], 0
-        je .processed
+        invoke  SendMessage, [combobox], CB_GETLBTEXT, [cursel], [process]
+        mov     eax, dword [process]
+        cmp     dword [eax], 0
+        je      .processed
 
         invoke  CreateToolhelp32Snapshot, TH32CS_SNAPPROCESS, 0
         mov     dword [snapshot], eax
@@ -113,7 +118,7 @@ section '.text' code readable executable
         cmp     eax, 0
         je      .inject_end
 
-        invoke  strcmp, process, entry32.szExeFile
+        invoke  strcmp, [process], entry32.szExeFile
         cmp     eax, 0
         je      .inject_end
 
@@ -126,7 +131,7 @@ section '.text' code readable executable
         invoke  VirtualAllocEx, [handle], 0, 260, MEM_RESERVE + MEM_COMMIT, PAGE_EXECUTE_READWRITE
         mov     dword [address], eax
 
-        invoke  WriteProcessMemory, [handle], eax, filename, 260, 0
+        invoke  WriteProcessMemory, [handle], eax, [filename], 260, 0
         invoke  GetModuleHandle, kernel32
         invoke  GetProcAddress, eax, loadlibrary
         invoke  CreateRemoteThread, [handle], 0, 0, eax, [address], 0, 0
@@ -164,7 +169,7 @@ section '.text' code readable executable
         cmp     eax, 0
         je      .processed
 
-        invoke  SetDlgItemText, [hwndDlg], 4, filename
+        invoke  SetDlgItemText, [hwndDlg], 4, [filename]
 
   .processed:
         mov     eax, 1
@@ -181,14 +186,15 @@ section '.data' data readable writeable
   snapshot dd 0
   handle dd 0
   address dd 0
+  filename dd 0
+  process dd 0
+
   entry32 PROCESSENTRY32
   ofn OPENFILENAMEA
 
   kernel32 db 'kernel32.dll', 0
   loadlibrary db 'LoadLibraryA', 0
   filter db '*.DLL', 0, '*.DLL', 0
-  filename db 260 dup 0
-  process db 260 dup 0
 
 section '.idata' import data readable
 
@@ -222,7 +228,9 @@ section '.idata' import data readable
          GetOpenFileName, 'GetOpenFileNameA'
 
   import msvcrt,\
-         strcmp, 'strcmp'
+         strcmp, 'strcmp',\
+         malloc, 'malloc',\
+         memset, 'memset'
 
 section '.rsrc' resource data readable
 
